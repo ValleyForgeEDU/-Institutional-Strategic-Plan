@@ -28,42 +28,39 @@ let reporterName = localStorage.getItem('uvf_reporter_name') || '';
 const approvedUsers = ["sdsullivan@valleyforge.edu"];
 
 // ─── IMMEDIATE LOGIN HANDLING ─────────────────────────
-(function handleLogin() {
-  // Run immediately on page load
-  msalInstance.handleRedirectPromise().then(async response => {
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const response = await msalInstance.handleRedirectPromise();
     _account = response?.account || msalInstance.getAllAccounts()[0];
 
     if (!_account) {
-      // No cached account, force login immediately
-      msalInstance.loginRedirect({ scopes: ["User.Read"], redirectUri });
-      return;
+      // No cached account — force redirect immediately
+      await msalInstance.loginRedirect({ scopes: ["User.Read"], redirectUri });
+      return; // Stop further execution
     }
 
     msalInstance.setActiveAccount(_account);
     const email = _account.username.toLowerCase();
 
-    // Domain check
     if (!email.endsWith("@valleyforge.edu")) {
       document.body.innerHTML = `<h2 style='text-align:center;margin-top:100px;'>Access restricted to @valleyforge.edu accounts.</h2>`;
       document.body.style.display = "block";
       return;
     }
 
-    // Approved users check
     if (!approvedUsers.includes(email)) {
       document.body.innerHTML = `<h2 style='text-align:center;margin-top:100px;'>Access restricted to approved users only.</h2>`;
       document.body.style.display = "block";
       return;
     }
 
-    // Successful login — initialize portal
     await initPortal();
-  }).catch(err => {
+  } catch(err) {
     console.error("MSAL login error:", err);
     document.body.innerHTML = `<h2 style='text-align:center;margin-top:100px;'>Microsoft login required — check console for details.</h2>`;
     document.body.style.display = "block";
-  });
-})();
+  }
+});
 
 // ─── PORTAL INITIALIZATION AFTER LOGIN ────────────────
 async function initPortal() {
