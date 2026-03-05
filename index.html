@@ -416,7 +416,7 @@ body { font-family: 'DM Sans', sans-serif; background: #F0EDE8; }
 </style>
     <script src="https://alcdn.msauth.net/browser/2.28.1/js/msal-browser.min.js"></script>
 </head>
-<body>
+<body style="display:none;">
 
 <!-- NAV -->
 <header class="nav-bar">
@@ -1829,19 +1829,19 @@ function cancelODAuth() {
   document.getElementById('od-step-1').style.display    = 'block';
 }
     
-// ─── MICROSOFT LOGIN ─────────────────────────────────────────
+// ─── MICROSOFT AUTH + INIT ───────────────────────────────────────────────────
 
 const msalConfig = {
   auth: {
-    clientId: "YOUR_CLIENT_ID",
-    authority: "https://login.microsoftonline.com/YOUR_TENANT_ID",
+    clientId: "30bde775-3b2a-4aa1-814d-0991dd3f2bda",
+    authority: "https://login.microsoftonline.com/aaa272b8-3164-4829-9149-92c872fd36df",
     redirectUri: window.location.origin
   }
 };
 
 const msalInstance = new msal.PublicClientApplication(msalConfig);
 
-async function vfccLogin() {
+async function startPortal() {
 
   try {
 
@@ -1849,27 +1849,47 @@ async function vfccLogin() {
       scopes: ["User.Read"]
     });
 
-    const account = response.account;
+    console.log("Logged in:", response.account.username);
+    const approvedUsers = [
+  "sdsullivan@valleyforge.edu",
+    ];
+      
+      const userEmail = response.account.username;
 
-    console.log("Logged in:", account.username);
+    if (!userEmail.endsWith("@vfcc.edu")) {
 
-  } catch (err) {
+      document.body.innerHTML =
+        "<h2 style='font-family:sans-serif;text-align:center;margin-top:100px;'>Access restricted to VFCC accounts.</h2>";
 
-    console.error("Login failed", err);
-    alert("Microsoft login failed.");
+      throw new Error("Unauthorized domain");
+
+    }
+    // Show the page
+    document.body.style.display = "block";
+
+    // Start your portal
+    loadReport();
+    renderSidebar();
+    renderEditor();
+    updateNavAvatar();
+    OD.init();
+
+  }
+
+  catch(error) {
+
+    document.body.innerHTML =
+      "<h2 style='font-family:sans-serif;text-align:center;margin-top:100px;'>Microsoft login required.</h2>";
+
+    console.error(error);
 
   }
 
 }
 
-vfccLogin();
+startPortal();
     
-// ─── INIT ─────────────────────────────────────────────────────────────────────
-loadReport();
-renderSidebar();
-renderEditor();
-updateNavAvatar();
-OD.init();
+
 </script>
 
 
