@@ -1677,35 +1677,37 @@ async function startPortal() {
       return;
     }
 
-    // Show page
-    document.body.style.display = "block";
+// Show page
+document.body.style.display = "block";
 
-    // Save reporter name
-    if (!reporterName) {
-      reporterName = _account.name || _account.username;
-      localStorage.setItem('uvf_reporter_name', reporterName);
-      updateNavAvatar();
-    }
-
-    // Initialize OD and portal UI after login
-    await OD.init();
-    await OD.pull();
-    setInterval(() => OD.pull(), 60000);
-
-    loadReport();
-    renderSidebar();
-    renderEditor();
-    updateNavAvatar();
-
-    console.log("Logged in:", userEmail);
-
-  } catch (error) {
-    console.error(error);
-    document.body.innerHTML =
-      "<h2 style='text-align:center;margin-top:100px;'>Microsoft login required.</h2>";
-  }
+// Save reporter name
+if (!reporterName) {
+  reporterName = _account.name || _account.username;
+  localStorage.setItem('uvf_reporter_name', reporterName);
+  updateNavAvatar();
 }
 
+// Initialize OD and portal UI safely
+try {
+  await OD.init();
+  await OD.pull();
+  setInterval(() => OD.pull(), 60000);
+
+  loadReport();
+  renderSidebar();
+  renderEditor();
+  updateNavAvatar();
+
+  console.log("Logged in:", userEmail);
+} catch(err) {
+  console.error("Portal initialization failed:", err);
+  // Optional: show a small error message without wiping the page
+  const errEl = document.createElement("p");
+  errEl.style.color = "red";
+  errEl.style.textAlign = "center";
+  errEl.textContent = "Portal failed to load completely. Check console for details.";
+  document.body.appendChild(errEl);
+}
 // OD login function for modal
 async function odLogin(clientId, reporterInput) {
   if (reporterInput) {
