@@ -1635,201 +1635,7 @@ const OD = (() => {
     return res;
   }
 
-  async function login(clientId) {
-    initApp(clientId);
-    await _app.initialize();
-    const result = await _app.loginPopup({ scopes: SCOPES });
-    _account = result.account;
-    if (!reporterName && _account?.name) {
-      reporterName = _account.name;
-      localStorage.setItem('uvf_reporter_name', reporterName);
-      updateNavAvatar();
-    }
-    persist();
-    return result;
-  }
-
-  async function push(silent=false) {
-    if (!_app || !_account) return;
-    if (!silent) setUI('Pushing to OneDrive…', 'syncing', 'connected');
-    try {
-      // Read current file to preserve kpiData written by admin
-      let kpiData = [];
-      let remoteReports = {};
-      try {
-        const r2 = await gFetch(`/me/drive/root:/${FILE_NAME}:/content`);
-        if (r2.ok) {
-          const existing = await r2.json();
-          kpiData = existing?.kpiData || (Array.isArray(existing) ? existing : []);
-          remoteReports = existing?.reports || {};
-        }
-      } catch(e) {}
-
-      // Merge remote reports with local (local takes priority for our entries)
-      const merged = { ...remoteReports, ...state.reports };
-
-      const payload = JSON.stringify({ kpiData, reports: merged }, null, 2);
-      const r = await gFetch(`/me/drive/root:/${FILE_NAME}:/content`, {
-        method: 'PUT', headers: {'Content-Type':'application/json'}, rawBody: payload
-      });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      if (!silent) {
-        const ts = new Date().toLocaleTimeString();
-        const who = _account?.name || _account?.username || 'user';
-        setUI(`Connected as <strong>${who}</strong> &nbsp;·&nbsp; <span style="color:#22c55e">✓ Saved</span> &nbsp;·&nbsp; ${ts}`, 'connected', 'connected');
-        showODToast('Saved to OneDrive ✓');
-      }
-    } catch(e) {
-      setUI('Push failed: ' + e.message, 'error', 'connected');
-      if (!silent) showODToast('Push error: ' + e.message);
-    }
-  }
-
-  async function pull() {
-    setUI('Pulling from OneDrive…', 'syncing', 'connected');
-    try {
-      const r = await gFetch(`/me/drive/root:/${FILE_NAME}:/content`);
-      if (r.status === 404) { setUI('No remote file yet — will create on first save.', 'connected', 'connected'); return; }
-      const remote = await r.json();
-      const remoteReports = remote?.reports || {};
-      // Merge: keep our local reports, fill in any missing remote ones
-      for (const k of Object.keys(remoteReports)) {
-        if (!state.reports[k]) state.reports[k] = remoteReports[k];
-      }
-      try { localStorage.setItem('uvf_plan_html_v1', JSON.stringify({reports: state.reports})); } catch(e) {}
-      loadReport(); renderEditor();
-      const ts = new Date().toLocaleTimeString();
-      const who = _account?.name || _account?.username || 'user';
-      setUI(`Connected as <strong>${who}</strong> &nbsp;·&nbsp; <span style="color:#22c55e">✓ Synced</span> &nbsp;·&nbsp; ${ts}`, 'connected', 'connected');
-    } catch(e) {
-      setUI('Pull failed: ' + e.message, 'error', 'connected');
-    }
-  }
-
-  function disconnect() {
-    if (!confirm('Disconnect from OneDrive? Local reports preserved.')) return;
-    if (_app && _account) _app.logoutPopup({account:_account}).catch(()=>{});
-    _app = null; _account = null;
-    localStorage.removeItem(LS_KEY);
-    setUI('Not connected', 'disconnected', 'disconnected');
-  }
-
-  async function init() {
-    if (!saved.clientId) return;
-    try {
-      initApp(saved.clientId);
-      await _app.initialize();
-      const accounts = _app.getAllAccounts();
-      if (!accounts.length) {
-        setUI('Session expired &nbsp;·&nbsp; <a onclick="openODSetup()" style="color:#60a5fa;cursor:pointer;text-decoration:underline">reconnect</a>', 'error', 'disconnected');
-        return;
-      }
-      _account = accounts[0];
-      setUI('Reconnecting…', 'connecting', 'connected');
-      await pull();
-      setInterval(()=>pull(), 60000); // background sync every 60s
-    } catch(e) {
-      setUI('Reconnect failed — <a onclick="openODSetup()" style="color:#60a5fa;cursor:pointer;text-decoration:underline">click to reconnect</a>', 'error', 'disconnected');
-    }
-  }
-
-  return { push, pull, disconnect, init, isConnected,
-    get state() { return { clientId: saved.clientId }; },
-    _login: login,
-  };
-})();
-
-function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-function showODToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'), 3000);
-}
-
-// ── OD Modal UI ───────────────────────────────────────────────────────────────
-function odFillUri() {
-  const uri = window.location.href.split('?')[0].split('#')[0];
-  const el = document.getElementById('od-redirect-uri');
-  const warn = document.getElementById('od-uri-warn');
-  if (el) el.textContent = uri;
-  if (warn) warn.style.display = uri.startsWith('file://') ? 'block' : 'none';
-}
-function odCopyUri() {
-  const el = document.getElementById('od-redirect-uri');
-  if (el) navigator.clipboard.writeText(el.textContent).then(()=>showODToast('URI copied!')).catch(()=>{});
-}
-function odShowError(msg) {
-  const el = document.getElementById('od-error-box');
-  if (el) { el.style.display='block'; el.innerHTML='⚠ '+esc(msg); }
-}
-function odClearError() {
-  const el = document.getElementById('od-error-box');
-  if (el) { el.style.display='none'; el.innerHTML=''; }
-}
-
-function openODSetup() {
-  odFillUri();
-  document.getElementById('od-setup-modal').classList.add('open');
-  document.getElementById('od-step-1').style.display    = 'block';
-  document.getElementById('od-step-auth').style.display  = 'none';
-  document.getElementById('od-step-success').style.display = 'none';
-  odClearError();
-  const cid = OD.state.clientId;
-  if (cid) {
-    document.getElementById('od-client-id').value = cid;
-    const h = document.getElementById('od-saved-hint');
-    if (h) h.style.display = 'block';
-  }
-  if (reporterName) document.getElementById('od-reporter-name').value = reporterName;
-}
-function closeODSetup() {
-  document.getElementById('od-setup-modal').classList.remove('open');
-}
-document.addEventListener('click', e => {
-  const m = document.getElementById('od-setup-modal');
-  if (e.target === m) closeODSetup();
-});
-
-async function startODAuth() {
-  odClearError();
-  const nameVal = document.getElementById('od-reporter-name').value.trim();
-  if (nameVal) { reporterName=nameVal; localStorage.setItem('uvf_reporter_name', reporterName); updateNavAvatar(); }
-  const clientId = document.getElementById('od-client-id').value.trim();
-  if (!clientId) { odShowError('Please paste your Azure Application (Client) ID.'); return; }
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientId)) {
-    odShowError('Client ID must be UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'); return;
-  }
-  document.getElementById('od-step-1').style.display   = 'none';
-  document.getElementById('od-step-auth').style.display = 'block';
-  try {
-    const result = await OD._login(clientId);
-    document.getElementById('od-step-auth').style.display   = 'none';
-    document.getElementById('od-step-success').style.display = 'block';
-    document.getElementById('od-success-user').textContent = result.account?.name || result.account?.username || '';
-    await OD.pull();
-    setInterval(()=>OD.pull(), 60000);
-  } catch(e) {
-    document.getElementById('od-step-auth').style.display = 'none';
-    document.getElementById('od-step-1').style.display    = 'block';
-    let msg = e.message || String(e);
-    if (msg.includes('popup_window_error'))           msg = 'Popup blocked — allow popups for this page, then try again.';
-    else if (msg.includes('AADSTS50011') || msg.includes('redirect_uri_mismatch')) {
-      const uri = window.location.href.split('?')[0].split('#')[0];
-      msg = `Redirect URI mismatch. In Azure → Authentication → SPA, add this URI exactly:\n${uri}`;
-    }
-    else if (msg.includes('AADSTS700016') || msg.includes('unauthorized_client')) msg = 'App not found. Double-check the Client ID.';
-    else if (msg.includes('user_cancelled')) msg = 'Sign-in cancelled. Try again.';
-    odShowError(msg);
-  }
-}
-function cancelODAuth() {
-  document.getElementById('od-step-auth').style.display = 'none';
-  document.getElementById('od-step-1').style.display    = 'block';
-}
-    
-// ─── MICROSOFT AUTH + INIT ───────────────────────────────────────────────────
+// ─── MICROSOFT AUTH + OD INIT ────────────────────────────────────────────────
 
 const msalConfig = {
   auth: {
@@ -1840,93 +1646,92 @@ const msalConfig = {
 };
 
 const msalInstance = new msal.PublicClientApplication(msalConfig);
-msalInstance.handleRedirectPromise().then(async (response) => {
+let _account = null;
+let reporterName = localStorage.getItem('uvf_reporter_name') || '';
 
-  let account;
-
-  if (response) {
-    account = response.account;
-    msalInstance.setActiveAccount(account);
-  } else {
-    const accounts = msalInstance.getAllAccounts();
-
-    if (accounts.length > 0) {
-      account = accounts[0];
-      msalInstance.setActiveAccount(account);
-    }
-  }
-
-  if (!account) {
-
-    await msalInstance.loginRedirect({
-      scopes: ["User.Read"]
-    });
-
-    return;
-  }
-
-  console.log("Logged in:", account.username);
-
-  document.body.style.display = "block";
-
-  // start your portal
-  loadReport();
-  renderSidebar();
-  renderEditor();
-  updateNavAvatar();
-  OD.init();
-
-}).catch(error => {
-
-  console.error(error);
-
-});
-async function startPortal() {
-
-  try {
-
-    await msalInstance.loginRedirect({
-  scopes: ["User.Read"]
-});
-
-    console.log("Logged in:", response.account.username);
-    const approvedUsers = [
+// List of specifically approved users
+const approvedUsers = [
   "sdsullivan@valleyforge.edu",
-    ];
-      
-      const userEmail = response.account.username;
+];
 
+// Initialize the portal after login
+async function startPortal() {
+  try {
+    const response = await msalInstance.handleRedirectPromise();
+
+    _account = response?.account || msalInstance.getAllAccounts()[0];
+
+    if (!_account) {
+      await msalInstance.loginRedirect({ scopes: ["User.Read"] });
+      return; // stop execution until redirect completes
+    }
+
+    msalInstance.setActiveAccount(_account);
+
+    const userEmail = _account.username.toLowerCase();
+
+    // Check domain
     if (!userEmail.endsWith("@vfcc.edu")) {
-
       document.body.innerHTML =
         "<h2 style='font-family:sans-serif;text-align:center;margin-top:100px;'>Access restricted to VFCC accounts.</h2>";
-
       throw new Error("Unauthorized domain");
-
     }
-    // Show the page
+
+    // Check approved users
+    if (!approvedUsers.includes(userEmail)) {
+      document.body.innerHTML =
+        "<h2 style='font-family:sans-serif;text-align:center;margin-top:100px;'>Access restricted to approved users only.</h2>";
+      throw new Error("User not approved");
+    }
+
+    // Show page
     document.body.style.display = "block";
 
-    // Start your portal
+    // Save reporter name if not already set
+    if (!reporterName) {
+      reporterName = _account.name || _account.username;
+      localStorage.setItem('uvf_reporter_name', reporterName);
+      updateNavAvatar();
+    }
+
+    // Initialize OD
+    await OD.init();
+    await OD.pull();
+    setInterval(() => OD.pull(), 60000);
+
+    // Start portal UI
     loadReport();
     renderSidebar();
     renderEditor();
     updateNavAvatar();
-    OD.init();
 
-  }
+    console.log("Logged in:", userEmail);
 
-  catch(error) {
-
+  } catch (error) {
     document.body.innerHTML =
       "<h2 style='font-family:sans-serif;text-align:center;margin-top:100px;'>Microsoft login required.</h2>";
-
     console.error(error);
-
   }
-
 }
 
+// Unified OD login function for modal setup
+async function odLogin(clientId, reporterInput) {
+  if (reporterInput) {
+    reporterName = reporterInput.trim();
+    localStorage.setItem('uvf_reporter_name', reporterName);
+    updateNavAvatar();
+  }
+
+  if (!clientId) throw new Error("Client ID required.");
+
+  if (msalInstance.config.auth.clientId !== clientId) {
+    msalInstance.config.auth.clientId = clientId;
+  }
+
+  await msalInstance.loginRedirect({ scopes: ["User.Read"] });
+}
+
+// Start portal
 startPortal();
     
 
