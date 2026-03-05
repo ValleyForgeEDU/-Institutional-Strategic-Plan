@@ -9,7 +9,9 @@
 <script src="https://alcdn.msauth.net/browser/2.39.0/js/msal-browser.min.js"></script>
 
 <script>
-// ─── MICROSOFT AUTHENTICATION CONFIG ─────────────────────────────────────────
+// ─── INITIAL SETUP ─────────────────────────────────────────────
+document.body.style.display = "none"; // hide page until login
+
 const redirectUri = "https://valleyforgeedu.github.io/Reporting-Portal/";
 
 const msalConfig = {
@@ -23,59 +25,9 @@ const msalConfig = {
 const msalInstance = new msal.PublicClientApplication(msalConfig);
 let _account = null;
 let reporterName = localStorage.getItem('uvf_reporter_name') || '';
-const approvedUsers = ["sdsullivan@valleyforge.edu"]; // add others if needed
+const approvedUsers = ["sdsullivan@valleyforge.edu"]; // add more if needed
 
-// ─── LOGIN & PORTAL STARTUP ─────────────────────────────────
-async function startLoginThenPortal() {
-  try {
-    const response = await msalInstance.handleRedirectPromise();
-    _account = response?.account || msalInstance.getAllAccounts()[0];
-
-    if (!_account) {
-      await msalInstance.loginRedirect({
-        scopes: ["User.Read"],
-        redirectUri
-      });
-      return; // stop until login completes
-    }
-
-    msalInstance.setActiveAccount(_account);
-
-    // optional domain/email check
-    const email = _account.username.toLowerCase();
-    if (!email.endsWith("@valleyforge.edu")) {
-      document.body.innerHTML = `
-        <h2 style="text-align:center;margin-top:100px;">
-          Access restricted to @valleyforge.edu accounts.
-        </h2>`;
-      return;
-    }
-
-    if (!approvedUsers.includes(email)) {
-      document.body.innerHTML = `
-        <h2 style="text-align:center;margin-top:100px;">
-          Access restricted to approved users only.
-        </h2>`;
-      return;
-    }
-
-  } catch (loginError) {
-    console.error("Login error:", loginError);
-    document.body.innerHTML = `
-      <h2 style="text-align:center;margin-top:100px;">
-        Microsoft login required — see console for details.
-      </h2>`;
-    return;
-  }
-
-  // page visible and portal runs only after login
-  runPortalAfterLogin();
-}
-
-// Start login/portal on page load
-startLoginThenPortal();
-
-// ─── RUN PORTAL AFTER LOGIN ───────────────────────────────
+// ─── PORTAL AFTER LOGIN ──────────────────────────────────────
 async function runPortalAfterLogin() {
   document.body.style.display = "block";
 
@@ -105,6 +57,57 @@ async function runPortalAfterLogin() {
     document.body.appendChild(errEl);
   }
 }
+
+// ─── LOGIN + REDIRECT HANDLING ───────────────────────────────
+(async () => {
+  try {
+    const response = await msalInstance.handleRedirectPromise();
+    let account = response?.account || msalInstance.getAllAccounts()[0];
+
+    if (!account) {
+      // No cached account — force login
+      await msalInstance.loginRedirect({
+        scopes: ["User.Read"],
+        redirectUri
+      });
+      return; // stops execution until login completes
+    }
+
+    msalInstance.setActiveAccount(account);
+
+    // enforce domain
+    const email = account.username.toLowerCase();
+    if (!email.endsWith("@valleyforge.edu")) {
+      document.body.innerHTML = `
+        <h2 style="text-align:center;margin-top:100px;">
+          Access restricted to @valleyforge.edu accounts.
+        </h2>`;
+      document.body.style.display = "block";
+      return;
+    }
+
+    // enforce approved users (optional)
+    if (!approvedUsers.includes(email)) {
+      document.body.innerHTML = `
+        <h2 style="text-align:center;margin-top:100px;">
+          Access restricted to approved users only.
+        </h2>`;
+      document.body.style.display = "block";
+      return;
+    }
+
+    _account = account;
+    await runPortalAfterLogin();
+
+  } catch (loginErr) {
+    console.error("Login failed:", loginErr);
+    document.body.innerHTML = `
+      <h2 style="text-align:center;margin-top:100px;">
+        Microsoft login required — check console for details.
+      </h2>`;
+    document.body.style.display = "block";
+  }
+})();
 
 // ─── OD MODAL LOGIN HELPER ───────────────────────────────
 async function odLogin(clientId, reporterInput) {
