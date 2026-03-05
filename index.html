@@ -1675,7 +1675,7 @@ async function startPortal() {
     const userEmail = _account.username.toLowerCase();
 
     // Check domain
-    if (!userEmail.endsWith("@valleyforge.edu")) {
+    if (!userEmail.endsWith("@vfcc.edu")) {
       document.body.innerHTML =
         "<h2 style='font-family:sans-serif;text-align:center;margin-top:100px;'>Access restricted to VFCC accounts.</h2>";
       throw new Error("Unauthorized domain");
