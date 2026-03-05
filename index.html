@@ -1657,12 +1657,14 @@ const approvedUsers = [
 // Initialize the portal after login
 async function startPortal() {
   try {
+    // 1. Handle redirect from Microsoft login
     const response = await msalInstance.handleRedirectPromise();
 
+    // 2. Get the active account from response or cached accounts
     _account = response?.account || msalInstance.getAllAccounts()[0];
 
     if (!_account) {
-      // ← This is where you trigger login
+      // 3. No logged-in user → redirect to login
       await msalInstance.loginRedirect({
         scopes: ["User.Read"],
         redirectUri: "https://valleyforgeedu.github.io/Reporting-Portal/"
@@ -1670,40 +1672,30 @@ async function startPortal() {
       return; // stop execution until redirect completes
     }
 
+    // 4. Set active account
     msalInstance.setActiveAccount(_account);
 
+    // 5. Optional domain/approved user checks
     const userEmail = _account.username.toLowerCase();
-
-    // Check domain
-    if (!userEmail.endsWith("@vfcc.edu")) {
+    if (!userEmail.endsWith("@valleyforge.edu")) {
       document.body.innerHTML =
-        "<h2 style='font-family:sans-serif;text-align:center;margin-top:100px;'>Access restricted to VFCC accounts.</h2>";
-      throw new Error("Unauthorized domain");
+        "<h2 style='text-align:center;margin-top:100px;'>Access restricted to VFCC accounts.</h2>";
+      return;
     }
 
-    // Check approved users
-    if (!approvedUsers.includes(userEmail)) {
-      document.body.innerHTML =
-        "<h2 style='font-family:sans-serif;text-align:center;margin-top:100px;'>Access restricted to approved users only.</h2>";
-      throw new Error("User not approved");
-    }
-
-    // Show page
+    // 6. Show page and initialize your app
     document.body.style.display = "block";
 
-    // Save reporter name if not already set
     if (!reporterName) {
       reporterName = _account.name || _account.username;
       localStorage.setItem('uvf_reporter_name', reporterName);
       updateNavAvatar();
     }
 
-    // Initialize OD
     await OD.init();
     await OD.pull();
     setInterval(() => OD.pull(), 60000);
 
-    // Start portal UI
     loadReport();
     renderSidebar();
     renderEditor();
@@ -1712,30 +1704,13 @@ async function startPortal() {
     console.log("Logged in:", userEmail);
 
   } catch (error) {
-    document.body.innerHTML =
-      "<h2 style='font-family:sans-serif;text-align:center;margin-top:100px;'>Microsoft login required.</h2>";
     console.error(error);
+    document.body.innerHTML =
+      "<h2 style='text-align:center;margin-top:100px;'>Microsoft login required.</h2>";
   }
 }
 
-// Unified OD login function for modal setup
-async function odLogin(clientId, reporterInput) {
-  if (reporterInput) {
-    reporterName = reporterInput.trim();
-    localStorage.setItem('uvf_reporter_name', reporterName);
-    updateNavAvatar();
-  }
-
-  if (!clientId) throw new Error("Client ID required.");
-
-  if (msalInstance.config.auth.clientId !== clientId) {
-    msalInstance.config.auth.clientId = clientId;
-  }
-
-  await msalInstance.loginRedirect({ scopes: ["User.Read"] });
-}
-
-// Start portal
+// Call on page load
 startPortal();
     
 
