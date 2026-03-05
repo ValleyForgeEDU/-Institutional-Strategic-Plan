@@ -414,6 +414,7 @@ body { font-family: 'DM Sans', sans-serif; background: #F0EDE8; }
 .od-modal-footer { display:flex;justify-content:flex-end;gap:8px;margin-top:18px; }
 .od-saved-hint { font-size:11px;color:#22c55e;margin-top:5px;display:none; }
 </style>
+    <script src="https://alcdn.msauth.net/browser/2.28.1/js/msal-browser.min.js"></script>
 </head>
 <body>
 
@@ -1827,7 +1828,42 @@ function cancelODAuth() {
   document.getElementById('od-step-auth').style.display = 'none';
   document.getElementById('od-step-1').style.display    = 'block';
 }
+    
+// ─── MICROSOFT LOGIN ─────────────────────────────────────────
 
+const msalConfig = {
+  auth: {
+    clientId: "YOUR_CLIENT_ID",
+    authority: "https://login.microsoftonline.com/YOUR_TENANT_ID",
+    redirectUri: window.location.origin
+  }
+};
+
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+async function vfccLogin() {
+
+  try {
+
+    const response = await msalInstance.loginPopup({
+      scopes: ["User.Read"]
+    });
+
+    const account = response.account;
+
+    console.log("Logged in:", account.username);
+
+  } catch (err) {
+
+    console.error("Login failed", err);
+    alert("Microsoft login failed.");
+
+  }
+
+}
+
+vfccLogin();
+    
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 loadReport();
 renderSidebar();
