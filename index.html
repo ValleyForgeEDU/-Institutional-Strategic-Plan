@@ -81,9 +81,15 @@
       // Expose who is signed in (your initPortal can use this)
       window.authAccount = account;
 
-      // Show UI and continue startup
-      await window.initPortal?.(account);
-      document.documentElement.style.visibility = "visible";
+
+// Show UI and continue startup
+try {
+  await window.initPortal?.(account);
+} finally {
+  // Always unhide the page, even if initPortal or data load throws
+  document.documentElement.style.visibility = "visible";
+}
+
     } catch (err) {
       console.error("[auth] error:", err);
       const msg = String(err?.message || err);
@@ -121,42 +127,30 @@
     }
   }
 
-  window.fetch = async function(input, init = {}) {
-    const url = (typeof input === 'string') ? input : (input && input.url) || '';
-    if (!isReportingUrl(url)) {
-      // Not our API → don’t touch
-      return origFetch(input, init);
-    }
+window.fetch = async function(input, init = {}) {
+  const url = (typeof input === 'string') ? input : (input && input.url) || '';
+  if (!isReportingUrl(url)) {
+    // Not our API → don’t touch
+    return origFetch(input, init);
+  }
 
-    const headers = new Headers(init.headers || {});
-    if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+  const headers = new Headers(init.headers || {});
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json');
 
-    // Prefer Bearer token if your page exposes getAccessToken (from your MSAL block)
-    let usedBearer = false;
-    if (typeof window.getAccessToken === 'function') {
-      try {
-        const token = await window.getAccessToken();
-        if (token) {
-          headers.set('Authorization', 'Bearer ' + token);
-          usedBearer = true;
-        }
-      } catch { /* ignore, we’ll fall back to cookies */ }
-    }
+  // Always send cookies for Reporting API calls
+  const credentials = 'include';
 
-    // If we didn’t attach a Bearer, send cookies so cookie-based APIs work
-    const credentials = init.credentials ?? (usedBearer ? 'same-origin' : 'include');
+  // Auto JSON Content-Type for object bodies on write methods
+  const m = (init.method || 'GET').toUpperCase();
+  const needsBodyJson = (m === 'POST' || m === 'PUT' || m === 'PATCH');
+  let body = init.body;
+  if (needsBodyJson && body && typeof body === 'object' && !(body instanceof FormData)) {
+    if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+    body = JSON.stringify(body);
+  }
 
-    // Auto JSON Content-Type for object bodies on write methods
-    const m = (init.method || 'GET').toUpperCase();
-    const needsBodyJson = (m === 'POST' || m === 'PUT' || m === 'PATCH');
-    let body = init.body;
-    if (needsBodyJson && body && typeof body === 'object' && !(body instanceof FormData)) {
-      if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-      body = JSON.stringify(body);
-    }
-
-    return origFetch(input, { ...init, headers, credentials, body });
-  };
+  return origFetch(input, { ...init, headers, credentials, body });
+};
 })();
 </script>
 
