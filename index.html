@@ -122,7 +122,65 @@ window.apiFetch = async function(path, options = {}) {
   return fetch(url, { ...options, headers });
 }
 </script>
-  
+  <script>
+/**
+ * Global fetch wrapper:
+ * - If window.getAccessToken exists → attach Authorization: Bearer <token>
+ * - Else → send cookies (credentials: 'include')
+ * - Always sets Accept: application/json
+ * - Helps detect when the server returns HTML (login page) instead of JSON
+ */
+(function patchFetch() {
+  if (window.__fetchPatched) return;
+  window.__fetchPatched = true;
+
+  const originalFetch = window.fetch.bind(window);
+
+  window.fetch = async function(input, init = {}) {
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+
+    // Build headers
+    const headers = new Headers(init.headers || {});
+    if (!headers.has("Accept")) headers.set("Accept", "application/json");
+
+    // Prefer Bearer token if available (JWT-protected API case)
+    let usedBearer = false;
+    if (typeof window.getAccessToken === "function") {
+      try {
+        const token = await window.getAccessToken();
+        if (token) {
+          headers.set("Authorization", "Bearer " + token);
+          usedBearer = true;
+        }
+      } catch (_) { /* ignore, we’ll fall back to cookies */ }
+    }
+
+    // If no Bearer token attached, fall back to cookies (cookie-protected API case)
+    const credentials =
+      init.credentials ??
+      (usedBearer ? "same-origin" : "include");  // include cookies only when not using Bearer
+
+    // Ensure JSON content-type on POST/PUT/PATCH if body is an object
+    let body = init.body;
+    const method = (init.method || "GET").toUpperCase();
+    const isJsonBodyMethod = (method === "POST" || method === "PUT" || method === "PATCH");
+    if (isJsonBodyMethod && body && typeof body === "object" && !(body instanceof FormData)) {
+      if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+      body = JSON.stringify(body);
+    }
+
+    const resp = await originalFetch(input, { ...init, headers, credentials, body });
+
+    // If server redirected us to an HTML login page, surface a helpful message
+    const contentType = resp.headers.get("content-type") || "";
+    if (resp.ok && contentType.includes("text/html")) {
+      console.warn("[api] Received HTML (likely a login page) from", url);
+    }
+
+    return resp;
+  };
+})();
+</script>
   <!-- Fonts link from your original -->
   <link href="./UVF Institutional Strategic Plan — Reporting Portal_files/css2" rel="stylesheet">
 
