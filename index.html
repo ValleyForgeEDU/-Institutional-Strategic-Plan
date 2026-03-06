@@ -5,35 +5,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>UVF Institutional Strategic Plan — Reporting Portal</title>
 
-  <!-- ✅ Load MSAL from your repo root (next to index.html). MUST be above the auth gate. -->
-  <script src="./msal-browser.min.js"></script>
+  <!-- MSAL -->
+<script src="./msal-browser.min.js"></script>
 
-  <style>
-    /* Hide the whole page until we explicitly show it after auth */
-    html { visibility: hidden; }
-  </style>
+<style>
+  /* Optional: hide until we’re ready to show the page */
+  html { visibility: hidden; }
+</style>
 
 <script>
-  // === Minimal MSAL auth gate to fix AADSTS90013 and let the page load ===
+  // === Minimal MSAL auth gate that never blocks the UI and waits for your page code ===
   const msalConfig = {
     auth: {
       clientId: "30bde775-3b2a-4aa1-814d-0991dd3f2bda",
       authority: "https://login.microsoftonline.com/aaa272b8-3164-4829-9149-92c872fd36df",
-      // IMPORTANT: this must exactly match a SPA redirect URI registered in Azure (incl. trailing slash)
       redirectUri: "https://valleyforgeedu.github.io/Reporting-Portal/",
       navigateToLoginRequestUrl: false
     },
     cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false }
   };
 
-  // ✅ Only request a known-good Graph scope until your API scope exists
+  // Use a known-good scope so sign-in is reliable
   const loginScopes = ["User.Read"];
 
+  // Optional gates
   const requireEmailDomain = "@valleyforge.edu";
-  const approvedUsers     = ["sdsullivan@valleyforge.edu"];
+  const approvedUsers      = ["sdsullivan@valleyforge.edu"];
 
   function showError(msg) {
-    document.body.innerHTML = `
+    // Show a friendly message but DO NOT keep the page hidden
+    const html = `
       <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#0F2240;color:#fff">
         <div style="max-width:720px;padding:24px;text-align:center;font-family:Segoe UI, Arial">
           <div style="font-size:38px;margin-bottom:8px">🔒</div>
@@ -41,25 +42,51 @@
           <div style="opacity:.9">${msg}</div>
         </div>
       </div>`;
-    document.documentElement.style.visibility = "visible";
+    document.body.insertAdjacentHTML('afterbegin', html);
+  }
+
+  // Defer your portal startup until the entire page (all scripts below) has loaded
+  function startPortalWhenReady(account) {
+    const start = async () => {
+      try {
+        if (typeof window.initPortal === "function") {
+          await window.initPortal(account);
+        } else {
+          console.warn("[portal] initPortal is not defined; showing page anyway.");
+        }
+      } catch (e) {
+        console.error("[portal] initPortal error:", e);
+        showError("There was a problem loading the page content.");
+      } finally {
+        // ALWAYS unhide the page so you’re not staring at a blank screen
+        document.documentElement.style.visibility = "visible";
+      }
+    };
+
+    if (document.readyState === "complete") {
+      // All scripts are already loaded; run now
+      start();
+    } else {
+      // Wait until everything (including scripts at the bottom) is ready
+      window.addEventListener("load", start, { once: true });
+    }
   }
 
   window.addEventListener("DOMContentLoaded", async () => {
-    if (typeof window.msal === "undefined" || !msal?.PublicClientApplication) {
-      showError("Microsoft auth library failed to load.");
-      return;
-    }
-
-    const pca = new msal.PublicClientApplication(msalConfig);
-
     try {
-      // Finish any prior redirect
-      const redirectResult = await pca.handleRedirectPromise();
+      if (typeof window.msal === "undefined" || !msal?.PublicClientApplication) {
+        showError("Microsoft auth library failed to load.");
+        document.documentElement.style.visibility = "visible";
+        return;
+      }
 
-      // Determine the active account
+      const pca = new msal.PublicClientApplication(msalConfig);
+
+      // Complete any prior redirect
+      const redirectResult = await pca.handleRedirectPromise();
       let account = redirectResult?.account || pca.getAllAccounts()[0];
 
-      // If no account, start login with only User.Read
+      // If not signed in, trigger login (User.Read only)
       if (!account) {
         await pca.loginRedirect({ scopes: loginScopes, redirectUri: msalConfig.auth.redirectUri });
         return; // resumes here after redirect
@@ -67,93 +94,43 @@
 
       pca.setActiveAccount(account);
 
-      // Optional allowlist checks
+      // Optional allowlist/domain checks
       const email = (account.username || "").toLowerCase();
       if (requireEmailDomain && !email.endsWith(requireEmailDomain)) {
         showError(`Access restricted to ${requireEmailDomain} accounts.`);
+        document.documentElement.style.visibility = "visible";
         return;
       }
       if (approvedUsers.length && !approvedUsers.includes(email)) {
         showError("Access restricted to approved users only.");
+        document.documentElement.style.visibility = "visible";
         return;
       }
 
-      // Expose who is signed in (your initPortal can use this)
+      // Expose who is signed in (if your code uses it)
       window.authAccount = account;
 
-
-// Show UI and continue startup
-try {
-  await window.initPortal?.(account);
-} finally {
-  // Always unhide the page, even if initPortal or data load throws
-  document.documentElement.style.visibility = "visible";
-}
-
+      // ⚠️ IMPORTANT:
+      // Don’t start your portal yet—wait until the entire page is loaded so initPortal exists.
+      startPortalWhenReady(account);
     } catch (err) {
       console.error("[auth] error:", err);
       const msg = String(err?.message || err);
-      // Helpful hint if redirect URI is wrong
       if (msg.includes("AADSTS50011") || msg.toLowerCase().includes("redirect_uri")) {
         showError(
           `Redirect URI mismatch. In Azure → App registrations → *ISP Reporting Portal* → Authentication (SPA), add this URI exactly:<br><code>${
             location.href.split('#')[0].split('?')[0]
           }</code>`
         );
-        return;
+      } else {
+        showError("Microsoft sign-in failed. Please refresh and try again.");
       }
-      showError("Microsoft sign-in failed. Please refresh and try again.");
+      // Regardless of error, show the page so you can see messages
+      document.documentElement.style.visibility = "visible";
     }
   });
 </script>
-
-<script>
-// Only attach auth to calls that hit "/Reporting/...". Everything else is untouched.
-(function () {
-  if (window.__reportingFetchPatched) return;
-  window.__reportingFetchPatched = true;
-
-  const origFetch = window.fetch.bind(window);
-
-  function isReportingUrl(u) {
-    // Matches "/Reporting/..." or "https://host/Reporting/..."
-    if (typeof u !== 'string') return false;
-    try {
-      // Normalize relative vs absolute
-      const abs = u.startsWith('http') ? new URL(u) : new URL(u, window.location.origin);
-      return /\/Reporting\//i.test(abs.pathname);
-    } catch {
-      return false;
-    }
-  }
-
-window.fetch = async function(input, init = {}) {
-  const url = (typeof input === 'string') ? input : (input && input.url) || '';
-  if (!isReportingUrl(url)) {
-    // Not our API → don’t touch
-    return origFetch(input, init);
-  }
-
-  const headers = new Headers(init.headers || {});
-  if (!headers.has('Accept')) headers.set('Accept', 'application/json');
-
-  // Always send cookies for Reporting API calls
-  const credentials = 'include';
-
-  // Auto JSON Content-Type for object bodies on write methods
-  const m = (init.method || 'GET').toUpperCase();
-  const needsBodyJson = (m === 'POST' || m === 'PUT' || m === 'PATCH');
-  let body = init.body;
-  if (needsBodyJson && body && typeof body === 'object' && !(body instanceof FormData)) {
-    if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-    body = JSON.stringify(body);
-  }
-
-  return origFetch(input, { ...init, headers, credentials, body });
-};
-})();
-</script>
-
+  
   <!-- Fonts link from your original -->
   <link href="./UVF Institutional Strategic Plan — Reporting Portal_files/css2" rel="stylesheet">
 
