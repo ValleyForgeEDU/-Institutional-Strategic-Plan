@@ -477,114 +477,124 @@
     <div class="toast" id="toast">✓ Report saved successfully</div>
   </template>
 
-  <!-- All app logic consolidated here -->
-  <script>
-    // ─── REPORTER NAME ────────────────────────────────────────────────────────
-    let reporterName = localStorage.getItem('uvf_reporter_name') || '';
-    function promptReporterName() {
-      const n = prompt('Enter your full name (shown to admins on reports):', reporterName);
-      if (n !== null) {
-        reporterName = n.trim() || reporterName;
-        localStorage.setItem('uvf_reporter_name', reporterName);
-        updateNavAvatar();
-      }
+<!-- All app logic consolidated here -->
+<script>
+  // ─── REPORTER NAME ────────────────────────────────────────────────────────
+  let reporterName = localStorage.getItem('uvf_reporter_name') || '';
+  function promptReporterName() {
+    const n = prompt('Enter your full name (shown to admins on reports):', reporterName);
+    if (n !== null) {
+      reporterName = n.trim() || reporterName;
+      localStorage.setItem('uvf_reporter_name', reporterName);
+      updateNavAvatar();
     }
-    function updateNavAvatar() {
-      const el = document.getElementById('navAvatar');
-      if (!el) return;
-      if (reporterName) {
-        const parts = reporterName.trim().split(' ');
-        el.textContent = (parts[0][0] + (parts[1]?.[0]||'')).toUpperCase();
-        el.title = reporterName + ' — click to change';
-      }
+  }
+  function updateNavAvatar() {
+    const el = document.getElementById('navAvatar');
+    if (!el) return;
+    if (reporterName) {
+      const parts = reporterName.trim().split(' ');
+      el.textContent = (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase();
+      el.title = reporterName + ' — click to change';
     }
+  }
 
-    // ─── DATA (verbatim from your file) ──────────────────────────────────────
-    const DB = { csfs: [] };
-    DB.csfs = [
-      /* === BEGIN your original DB.csfs content (verbatim) === */
-      /* (I kept it exactly as you sent; omitted here for brevity) */
-      /* PASTE your DB.csfs blocks here if you maintain separately */
-    ];
-    // For this response, I included the full DB in earlier messages—you can keep your original block as-is.
+  // ─── DATA ─────────────────────────────────────────────────────────────────
+  const DB = { csfs: [] };
 
-    // ─── STATE ───────────────────────────────────────────────────────────────
-    let state = {
-      activeGoalId: "1.1.1.1",
-      selectedYear: "2023-2024",
-      reports: {},
-      expandedCsfs: { csf1: true },
-      kpiProgress: {},
-      evidenceFiles: [],
-      status: "Not Started",
-      results: "",
-      lastSaved: null
+  /* === BEGIN YOUR ORIGINAL DB.csfs CONTENT (keep exactly as in your file) ===
+     Example:
+     DB.csfs = [
+       { id: "csf1", title: "Title", subtitle: "Sub", items: [ ... ] },
+       ...
+     ];
+     === END YOUR ORIGINAL DB.csfs CONTENT === */
+  // (Leave this marker, but paste your full DB.csfs assignment above it.)
+
+  // ─── STATE ────────────────────────────────────────────────────────────────
+  let state = {
+    activeGoalId: "1.1.1.1",
+    selectedYear: "2023-2024",
+    reports: {},
+    expandedCsfs: { csf1: true },
+    kpiProgress: {},
+    evidenceFiles: [],
+    status: "Not Started",
+    results: "",
+    lastSaved: null
+  };
+
+  try {
+    const saved = localStorage.getItem("uvf_plan_html_v1");
+    if (saved) {
+      const p = JSON.parse(saved);
+      state.reports = p.reports || {};
+    }
+  } catch (_) {}
+
+  // ─── HELPERS ──────────────────────────────────────────────────────────────
+  function findGoal(id) {
+    for (const csf of DB.csfs)
+      for (const item of csf.items)
+        if (item.id === id && item.type === "goal") return item;
+    return null;
+  }
+  function fmtDate(d) {
+    if (!d) return '';
+    const [y, m, day] = d.split('-');
+    return `${m}/${day}/${y}`;
+  }
+  const reportKey = () => `${state.activeGoalId}_${state.selectedYear}`;
+
+  function loadReport() {
+    const r = state.reports[reportKey()];
+    if (r) {
+      state.status = r.status || "Not Started";
+      state.results = r.results || "";
+      state.kpiProgress = r.kpiProgress ? { ...r.kpiProgress } : {};
+      state.evidenceFiles = r.evidence ? [...r.evidence] : [];
+    } else {
+      state.status = "Not Started";
+      state.results = "";
+      state.kpiProgress = {};
+      state.evidenceFiles = [];
+    }
+  }
+
+  function saveReport() {
+    const key = reportKey();
+    state.reports[key] = {
+      status: state.status,
+      results: state.results,
+      kpiProgress: { ...state.kpiProgress },
+      evidence: [...state.evidenceFiles],
+      savedAt: new Date().toISOString(),
+      savedBy: reporterName || 'Unknown Reporter'
     };
+    try { localStorage.setItem("uvf_plan_html_v1", JSON.stringify({ reports: state.reports })); } catch (_) {}
+    state.lastSaved = new Date();
+    if (OD.isConnected()) OD.push();
+  }
 
-    try {
-      const saved = localStorage.getItem("uvf_plan_html_v1");
-      if (saved) {
-        const p = JSON.parse(saved);
-        state.reports = p.reports || {};
-      }
-    } catch(e){}
+  function statusClass(s) {
+    return {
+      "Not Started": "s-not-started",
+      "Ongoing": "s-ongoing",
+      "Completed": "s-completed",
+      "On Schedule": "s-on-schedule",
+      "Delayed": "s-delayed",
+      "Overdue": "s-overdue"
+    }[s] || "s-not-started";
+  }
 
-    // ─── HELPERS ─────────────────────────────────────────────────────────────
-    function findGoal(id) {
-      for (const csf of DB.csfs)
-        for (const item of csf.items)
-          if (item.id === id && item.type === "goal") return item;
-      return null;
-    }
-    function fmtDate(d) {
-      if (!d) return '';
-      const [y,m,day] = d.split('-');
-      return `${m}/${day}/${y}`;
-    }
-    function reportKey() { return `${state.activeGoalId}_${state.selectedYear}`; }
-
-    function loadReport() {
-      const r = state.reports[reportKey()];
-      if (r) {
-        state.status = r.status || "Not Started";
-        state.results = r.results || "";
-        state.kpiProgress = r.kpiProgress ? {...r.kpiProgress} : {};
-        state.evidenceFiles = r.evidence ? [...r.evidence] : [];
-      } else {
-        state.status = "Not Started";
-        state.results = "";
-        state.kpiProgress = {};
-        state.evidenceFiles = [];
-      }
-    }
-
-    function saveReport() {
-      const key = reportKey();
-      state.reports[key] = {
-        status: state.status,
-        results: state.results,
-        kpiProgress: {...state.kpiProgress},
-        evidence: [...state.evidenceFiles],
-        savedAt: new Date().toISOString(),
-        savedBy: reporterName || 'Unknown Reporter'
-      };
-      try { localStorage.setItem("uvf_plan_html_v1", JSON.stringify({reports: state.reports})); } catch(e){}
-      state.lastSaved = new Date();
-      if (OD.isConnected()) OD.push();
-    }
-
-    function statusClass(s) {
-      return { "Not Started":"s-not-started","Ongoing":"s-ongoing","Completed":"s-completed",
-               "On Schedule":"s-on-schedule","Delayed":"s-delayed","Overdue":"s-overdue" }[s] || "s-not-started";
-    }
-
-    // ─── SIDEBAR ────────────────────────────────────────────────────────────
-    function renderSidebar() {
-      const el = document.getElementById('sidebarScroll');
-      let html = '';
-      for (const csf of DB.csfs) {
-        const open = !!state.expandedCsfs[csf.id];
-        html += `<div class="csf-block">
+  // ─── SIDEBAR ──────────────────────────────────────────────────────────────
+  function renderSidebar() {
+    const el = document.getElementById('sidebarScroll');
+    let html = '';
+    for (const csf of DB.csfs) {
+      const open = !!state.expandedCsfs[csf.id];
+      html += `
+        <div class="csf-block">
           <button class="csf-btn" onclick="toggleCsf('${csf.id}')">
             <div class="csf-btn-inner">
               <div class="csf-num">${csf.id.replace('csf','')}</div>
@@ -593,59 +603,65 @@
                 <div class="csf-sub">${csf.subtitle}</div>
               </div>
             </div>
-            <span class="csf-chevron${open?' open':''}">
+            <span class="csf-chevron${open ? ' open' : ''}">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
             </span>
           </button>
-          <div class="csf-children${open?' open':''}">`;
-        for (const item of csf.items) {
-          if (item.type === 'goal') {
-            const active = item.id === state.activeGoalId;
-            html += `<button class="goal-btn${active?' active':''}" onclick="selectGoal('${item.id}')">
+          <div class="csf-children${open ? ' open' : ''}">
+      `;
+      for (const item of csf.items) {
+        if (item.type === 'goal') {
+          const active = item.id === state.activeGoalId;
+          html += `
+            <button class="goal-btn${active ? ' active' : ''}" onclick="selectGoal('${item.id}')">
               <span class="goal-num">${item.number}</span>
               <span class="goal-name">${item.name}</span>
-            </button>`;
-          } else {
-            html += `<div class="group-label">${item.title}</div>`;
-          }
+            </button>
+          `;
+        } else {
+          html += `<div class="group-label">${item.title}</div>`;
         }
-        html += `</div></div>`;
       }
-      el.innerHTML = html;
+      html += `</div></div>`;
     }
+    el.innerHTML = html;
+  }
 
-    // ─── EDITOR ─────────────────────────────────────────────────────────────
-    function renderEditor() {
-      const goal = findGoal(state.activeGoalId);
-      const el = document.getElementById('editorContainer');
-      if (!goal) { el.innerHTML = '<div class="empty-state">Select a goal from the sidebar to begin reporting.</div>'; return; }
+  // ─── EDITOR ───────────────────────────────────────────────────────────────
+  function renderEditor() {
+    const goal = findGoal(state.activeGoalId);
+    const el = document.getElementById('editorContainer');
+    if (!goal) { el.innerHTML = '<div class="empty-state">Select a goal from the sidebar to begin reporting.</div>'; return; }
 
-      const done = Object.values(state.kpiProgress).filter(Boolean).length;
-      const total = goal.kpis.length;
-      const pct = total > 0 ? Math.round((done/total)*100) : 0;
-      const sc = statusClass(state.status);
+    const done = Object.values(state.kpiProgress).filter(Boolean).length;
+    const total = goal.kpis.length;
+    const pct = total > 0 ? Math.round((done/total)*100) : 0;
+    const sc = statusClass(state.status);
 
-      let kpiHtml = '';
-      goal.kpis.forEach((kpi, i) => {
-        const checked = !!state.kpiProgress[i];
-        kpiHtml += `<div class="kpi-item${checked?' done':''}" onclick="toggleKpi(${i})">
+    let kpiHtml = '';
+    goal.kpis.forEach((kpi, i) => {
+      const checked = !!state.kpiProgress[i];
+      kpiHtml += `
+        <div class="kpi-item${checked ? ' done' : ''}" onclick="toggleKpi(${i})">
           <div class="kpi-check">
             ${checked ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
           </div>
           <span class="kpi-text">${escHtml(kpi)}</span>
         </div>`;
-      });
+    });
 
-      let evidenceHtml = '';
-      if (state.evidenceFiles.length === 0) {
-        evidenceHtml = `<div class="evidence-empty">
+    let evidenceHtml = '';
+    if (state.evidenceFiles.length === 0) {
+      evidenceHtml = `
+        <div class="evidence-empty">
           <div class="evidence-empty-title">No evidence uploaded yet</div>
           <div class="evidence-empty-sub">Drag and drop files here, or use the upload button above.</div>
         </div>`;
-      } else {
-        evidenceHtml = `<div class="evidence-list">`;
-        state.evidenceFiles.forEach((f, i) => {
-          evidenceHtml += `<div class="evidence-item">
+    } else {
+      evidenceHtml = `<div class="evidence-list">`;
+      state.evidenceFiles.forEach((f, i) => {
+        evidenceHtml += `
+          <div class="evidence-item">
             <div style="display:flex;align-items:center;gap:12px">
               <div class="evidence-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg></div>
               <div>
@@ -657,232 +673,236 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
             </button>
           </div>`;
-        });
-        evidenceHtml += `</div>`;
-      }
+      });
+      evidenceHtml += `</div>`;
+    }
 
-      const lastSavedStr = state.lastSaved
-        ? `Saved at ${state.lastSaved.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`
-        : 'Not yet saved this session';
+    const lastSavedStr = state.lastSaved
+      ? `Saved at ${state.lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+      : 'Not yet saved this session';
 
-      el.innerHTML = `
-        <!-- Header Card -->
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <h1 class="goal-heading">Goal <span>${escHtml(goal.number)}</span></h1>
-              <div class="fy-pill">Reporting Period: FY ${escHtml(state.selectedYear)}</div>
-            </div>
-            <span class="status-badge ${sc}">${escHtml(state.status)}</span>
-          </div>
-
-          <div class="field-group fg-2col">
-            <div>
-              <label class="field-label">Goal Name</label>
-              <input class="field-input readonly" value="${escAttr(goal.name)}" readonly />
-            </div>
-            <div>
-              <label class="field-label">Item Number</label>
-              <input class="field-input readonly" value="${escAttr(goal.number)}" readonly />
-            </div>
-          </div>
-
+    el.innerHTML = `
+      <!-- Header Card -->
+      <div class="card">
+        <div class="card-header">
           <div>
-            <span class="goal-text-label">Full Goal</span>
-            <div class="goal-text-box">${escHtml(goal.fullGoal)}</div>
+            <h1 class="goal-heading">Goal <span>${escHtml(goal.number)}</span></h1>
+            <div class="fy-pill">Reporting Period: FY ${escHtml(state.selectedYear)}</div>
           </div>
+          <span class="status-badge ${sc}">${escHtml(state.status)}</span>
+        </div>
 
-          <div class="field-group fg-3col" style="margin-top:16px">
-            <div>
-              <label class="field-label">Start Date</label>
-              <div class="date-display">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9E9286" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
-                ${fmtDate(goal.startDate)}
-              </div>
-            </div>
-            <div>
-              <label class="field-label">End Date</label>
-              <div class="date-display">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9E9286" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
-                ${fmtDate(goal.endDate)}
-              </div>
-            </div>
-            <div>
-              <label class="field-label accent">Current Status *</label>
-              <select class="field-select" onchange="onStatusChange(this.value)">
-                ${["Not Started","Ongoing","Completed","On Schedule","Delayed","Overdue"].map(s =>
-                  `<option value="${s}"${s===state.status?' selected':''}>${s}</option>`).join('')}
-              </select>
-            </div>
+        <div class="field-group fg-2col">
+          <div>
+            <label class="field-label">Goal Name</label>
+            <input class="field-input readonly" value="${escAttr(goal.name)}" readonly />
+          </div>
+          <div>
+            <label class="field-label">Item Number</label>
+            <input class="field-input readonly" value="${escAttr(goal.number)}" readonly />
           </div>
         </div>
 
-        <!-- Two Column -->
-        <div class="two-col">
-          <div class="left-col">
-            <!-- Results -->
-            <div class="card">
-              <div class="section-title">Results &amp; Conclusions</div>
-              <div class="section-sub">Describe the process of collecting this data and summarize your findings.</div>
-              <div class="editor-wrap">
-                <div class="editor-toolbar">
-                  <button class="toolbar-btn" style="font-weight:800" onclick="fmtText('bold')">B</button>
-                  <button class="toolbar-btn" style="font-style:italic" onclick="fmtText('italic')">I</button>
-                  <button class="toolbar-btn" style="text-decoration:underline" onclick="fmtText('underline')">U</button>
-                  <div class="toolbar-divider"></div>
-                  <button class="toolbar-btn">List</button>
-                  <button class="toolbar-btn">Link</button>
-                </div>
-                <textarea id="resultsTextarea" class="editor-textarea"
-                  placeholder="Enter your report findings and conclusions here…"
-                  oninput="onResultsChange(this.value)">${escHtml(state.results)}</textarea>
-              </div>
-            </div>
+        <div>
+          <span class="goal-text-label">Full Goal</span>
+          <div class="goal-text-box">${escHtml(goal.fullGoal)}</div>
+        </div>
 
-            <!-- Evidence -->
-            <div class="card">
-              <div class="section-header">
-                <div>
-                  <div class="section-title">Evidence &amp; Artifacts</div>
-                  <div class="section-sub" style="margin-bottom:0">Supporting documents for this reporting period.</div>
-                </div>
-                <button class="upload-btn" onclick="addEvidence()">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
-                  Upload Evidence
-                </button>
+        <div class="field-group fg-3col" style="margin-top:16px">
+          <div>
+            <label class="field-label">Start Date</label>
+            <div class="date-display">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9E9286" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+              ${fmtDate(goal.startDate)}
+            </div>
+          </div>
+          <div>
+            <label class="field-label">End Date</label>
+            <div class="date-display">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9E9286" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+              ${fmtDate(goal.endDate)}
+            </div>
+          </div>
+          <div>
+            <label class="field-label accent">Current Status *</label>
+            <select class="field-select" onchange="onStatusChange(this.value)">
+              ${["Not Started","Ongoing","Completed","On Schedule","Delayed","Overdue"].map(s =>
+                `<option value="${s}"${s === state.status ? ' selected' : ''}>${s}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Two Column -->
+      <div class="two-col">
+        <div class="left-col">
+          <!-- Results -->
+          <div class="card">
+            <div class="section-title">Results &amp; Conclusions</div>
+            <div class="section-sub">Describe the process of collecting this data and summarize your findings.</div>
+            <div class="editor-wrap">
+              <div class="editor-toolbar">
+                <button class="toolbar-btn" style="font-weight:800" onclick="fmtText('bold')">B</button>
+                <button class="toolbar-btn" style="font-style:italic" onclick="fmtText('italic')">I</button>
+                <button class="toolbar-btn" style="text-decoration:underline" onclick="fmtText('underline')">U</button>
+                <div class="toolbar-divider"></div>
+                <button class="toolbar-btn">List</button>
+                <button class="toolbar-btn">Link</button>
               </div>
-              ${evidenceHtml}
+              <textarea id="resultsTextarea" class="editor-textarea"
+                placeholder="Enter your report findings and conclusions here…"
+                oninput="onResultsChange(this.value)">${escHtml(state.results)}</textarea>
             </div>
           </div>
 
-          <div class="right-col">
-            <!-- KPI Panel -->
-            <div class="kpi-card">
-              <div class="kpi-header">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
-                <span class="kpi-title">KPI Tracking</span>
+          <!-- Evidence -->
+          <div class="card">
+            <div class="section-header">
+              <div>
+                <div class="section-title">Evidence &amp; Artifacts</div>
+                <div class="section-sub" style="margin-bottom:0">Supporting documents for this reporting period.</div>
               </div>
-              ${kpiHtml}
-              <div class="kpi-progress-wrap">
-                <div class="kpi-progress-row">
-                  <span>Completion Progress</span>
-                  <span class="kpi-count">${done}/${total} KPIs (${pct}%)</span>
-                </div>
-                <div class="progress-track">
-                  <div class="progress-fill" style="width:${pct}%"></div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Actions -->
-            <div class="actions-card">
-              <div class="actions-title">Actions</div>
-              <div class="last-saved">${lastSavedStr}</div>
-              <button class="btn-primary" onclick="handleSave()">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                Save Changes
+              <button class="upload-btn" onclick="addEvidence()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                Upload Evidence
               </button>
-              <button class="btn-secondary">Cancel</button>
             </div>
+            ${evidenceHtml}
           </div>
         </div>
-      `;
-    }
 
-    // ─── ESCAPE HELPERS ─────────────────────────────────────────────────────
-    function escHtml(str) {
-      return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    }
-    function escAttr(str) {
-      return String(str||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-    }
+        <div class="right-col">
+          <!-- KPI Panel -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+              <span class="kpi-title">KPI Tracking</span>
+            </div>
+            ${kpiHtml}
+            <div class="kpi-progress-wrap">
+              <div class="kpi-progress-row">
+                <span>Completion Progress</span>
+                <span class="kpi-count">${done}/${total} KPIs (${pct}%)</span>
+              </div>
+              <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+            </div>
+          </div>
 
-    // ─── EVENT HANDLERS ─────────────────────────────────────────────────────
-    function toggleCsf(id) {
-      state.expandedCsfs[id] = !state.expandedCsfs[id];
-      renderSidebar();
-    }
-    function selectGoal(id) {
-      state.activeGoalId = id;
-      loadReport();
-      renderSidebar();
-      renderEditor();
-      document.getElementById('mainArea').scrollTop = 0;
-    }
-    function onYearChange(year) {
-      state.selectedYear = year;
-      loadReport();
-      renderEditor();
-    }
-    function onStatusChange(val) {
-      state.status = val;
-      const badge = document.querySelector('.status-badge');
-      if (badge) {
-        badge.textContent = val;
-        badge.className = 'status-badge ' + statusClass(val);
-      }
-    }
-    function onResultsChange(val) { state.results = val; }
+          <!-- Actions -->
+          <div class="actions-card">
+            <div class="actions-title">Actions</div>
+            <div class="last-saved">${lastSavedStr}</div>
+            <button class="btn-primary" onclick="handleSave()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              Save Changes
+            </button>
+            <button class="btn-secondary">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
 
-    function toggleKpi(index) {
-      state.kpiProgress[index] = !state.kpiProgress[index];
-      const goal = findGoal(state.activeGoalId);
-      if (!goal) return;
-      const done = Object.values(state.kpiProgress).filter(Boolean).length;
-      const total = goal.kpis.length;
-      const pct = total > 0 ? Math.round((done/total)*100) : 0;
+  // ─── ESCAPE HELPERS ───────────────────────────────────────────────────────
+  function escHtml(str) {
+    return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function escAttr(str) {
+    return String(str ?? '').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
 
-      const kpiCard = document.querySelector('.kpi-card');
-      if (!kpiCard) return;
-      let kpiHtml = `<div class="kpi-header">
+  // ─── EVENT HANDLERS ───────────────────────────────────────────────────────
+  function toggleCsf(id) {
+    state.expandedCsfs[id] = !state.expandedCsfs[id];
+    renderSidebar();
+  }
+  function selectGoal(id) {
+    state.activeGoalId = id;
+    loadReport();
+    renderSidebar();
+    renderEditor();
+    const ma = document.getElementById('mainArea');
+    if (ma) ma.scrollTop = 0;
+  }
+  function onYearChange(year) {
+    state.selectedYear = year;
+    loadReport();
+    renderEditor();
+  }
+  function onStatusChange(val) {
+    state.status = val;
+    const badge = document.querySelector('.status-badge');
+    if (badge) {
+      badge.textContent = val;
+      badge.className = 'status-badge ' + statusClass(val);
+    }
+  }
+  function onResultsChange(val) { state.results = val; }
+
+  function toggleKpi(index) {
+    state.kpiProgress[index] = !state.kpiProgress[index];
+    const goal = findGoal(state.activeGoalId);
+    if (!goal) return;
+    const done = Object.values(state.kpiProgress).filter(Boolean).length;
+    const total = goal.kpis.length;
+    const pct = total > 0 ? Math.round((done/total)*100) : 0;
+
+    const kpiCard = document.querySelector('.kpi-card');
+    if (!kpiCard) return;
+    let kpiHtml = `
+      <div class="kpi-header">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
         <span class="kpi-title">KPI Tracking</span>
       </div>`;
-      goal.kpis.forEach((kpi, i) => {
-        const checked = !!state.kpiProgress[i];
-        kpiHtml += `<div class="kpi-item${checked?' done':''}" onclick="toggleKpi(${i})">
+    goal.kpis.forEach((kpi, i) => {
+      const checked = !!state.kpiProgress[i];
+      kpiHtml += `
+        <div class="kpi-item${checked ? ' done' : ''}" onclick="toggleKpi(${i})">
           <div class="kpi-check">${checked ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}</div>
           <span class="kpi-text">${escHtml(kpi)}</span>
         </div>`;
-      });
-      kpiHtml += `<div class="kpi-progress-wrap">
+    });
+    kpiHtml += `
+      <div class="kpi-progress-wrap">
         <div class="kpi-progress-row">
           <span>Completion Progress</span>
           <span class="kpi-count">${done}/${total} KPIs (${pct}%)</span>
         </div>
         <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
       </div>`;
-      kpiCard.innerHTML = kpiHtml;
-    }
+    kpiCard.innerHTML = kpiHtml;
+  }
 
-    function addEvidence() {
-      const ts = Date.now().toString().slice(-6);
-      state.evidenceFiles.push({
-        name: `Evidence_${ts}.pdf`,
-        date: new Date().toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'})
-      });
-      renderEvidenceSection();
-    }
-    function removeEvidence(idx) {
-      state.evidenceFiles.splice(idx, 1);
-      renderEvidenceSection();
-    }
-    function renderEvidenceSection() {
-      const evidenceCards = document.querySelectorAll('.left-col .card');
-      if (evidenceCards.length < 2) return;
-      const parent = evidenceCards[1];
-      const old = parent.querySelector('.evidence-list, .evidence-empty');
-      if (old) old.remove();
-      let evidenceHtml = '';
-      if (state.evidenceFiles.length === 0) {
-        evidenceHtml = `<div class="evidence-empty">
+  function addEvidence() {
+    const ts = Date.now().toString().slice(-6);
+    state.evidenceFiles.push({
+      name: `Evidence_${ts}.pdf`,
+      date: new Date().toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+    });
+    renderEvidenceSection();
+  }
+  function removeEvidence(idx) {
+    state.evidenceFiles.splice(idx, 1);
+    renderEvidenceSection();
+  }
+  function renderEvidenceSection() {
+    const evidenceCards = document.querySelectorAll('.left-col .card');
+    if (evidenceCards.length < 2) return;
+    const parent = evidenceCards[1];
+    const old = parent.querySelector('.evidence-list, .evidence-empty');
+    if (old) old.remove();
+    let evidenceHtml = '';
+    if (state.evidenceFiles.length === 0) {
+      evidenceHtml = `
+        <div class="evidence-empty">
           <div class="evidence-empty-title">No evidence uploaded yet</div>
           <div class="evidence-empty-sub">Drag and drop files here, or use the upload button above.</div>
         </div>`;
-      } else {
-        evidenceHtml = `<div class="evidence-list">`;
-        state.evidenceFiles.forEach((f, i) => {
-          evidenceHtml += `<div class="evidence-item">
+    } else {
+      evidenceHtml = `<div class="evidence-list">`;
+      state.evidenceFiles.forEach((f, i) => {
+        evidenceHtml += `
+          <div class="evidence-item">
             <div style="display:flex;align-items:center;gap:12px">
               <div class="evidence-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg></div>
               <div>
@@ -894,355 +914,361 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
             </button>
           </div>`;
-        });
-        evidenceHtml += `</div>`;
-      }
-      const tmp = document.createElement('div');
-      tmp.innerHTML = evidenceHtml;
-      parent.appendChild(tmp.firstElementChild);
+      });
+      evidenceHtml += `</div>`;
+    }
+    const tmp = document.createElement('div');
+    tmp.innerHTML = evidenceHtml;
+    parent.appendChild(tmp.firstElementChild);
+  }
+
+  function fmtText(cmd) {
+    const ta = document.getElementById('resultsTextarea');
+    if (!ta) return;
+    ta.focus();
+    document.execCommand(cmd, false, null);
+  }
+
+  function handleSave() {
+    const ta = document.getElementById('resultsTextarea');
+    if (ta) state.results = ta.value;
+    saveReport();
+    const ls = document.querySelector('.last-saved');
+    if (ls) ls.textContent = `Saved at ${state.lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    showToast();
+  }
+
+  function showToast() {
+    const t = document.getElementById('toast');
+    if (!t) return;
+    t.textContent = '✓ Report saved successfully';
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  // ─── ONEDRIVE MODULE (MSAL popup) ─────────────────────────────────────────
+  const OD = (() => {
+    const LS_KEY    = 'uvf_reporter_od_v2';
+    const GRAPH     = 'https://graph.microsoft.com/v1.0';
+    const SCOPES    = ['Files.ReadWrite', 'User.Read'];
+    const FILE_NAME = 'UVF_KPI_Data.json';
+
+    let _app = null;
+    let _account = null;
+
+    const saved = (() => { try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null') || {}; } catch(e){ return {}; } })();
+
+    function persist() {
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        clientId: _app?.getConfiguration().auth.clientId || saved.clientId
+      }));
     }
 
-    function fmtText(cmd) {
-      const ta = document.getElementById('resultsTextarea');
-      if (!ta) return;
-      ta.focus();
-      document.execCommand(cmd, false, null);
+    function isConnected() { return !!(_app && _account); }
+
+    function setUI(text, dotClass, mode) {
+      const dot = document.getElementById('od-dot');
+      const msg = document.getElementById('od-status');
+      if (dot) dot.className = 'od-dot ' + dotClass;
+      if (msg) msg.innerHTML = '<strong>OneDrive:</strong> ' + text;
+      const show = (id, v) => { const el = document.getElementById(id); if (el) el.style.display = v ? '' : 'none'; };
+      const conn = mode === 'connected';
+      show('od-btn-connect', !conn);
+      show('od-btn-pull',    conn);
+      show('od-btn-push',    conn);
+      show('od-btn-disc',    conn);
     }
 
-    function handleSave() {
-      const ta = document.getElementById('resultsTextarea');
-      if (ta) state.results = ta.value;
-      saveReport();
-      const ls = document.querySelector('.last-saved');
-      if (ls) ls.textContent = `Saved at ${state.lastSaved.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`;
-      showToast();
+    function initApp(clientId) {
+      const redirectUri = window.location.href.split('?')[0].split('#')[0];
+      _app = new msal.PublicClientApplication({
+        auth: { clientId, authority: 'https://login.microsoftonline.com/common', redirectUri, navigateToLoginRequestUrl: false },
+        cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false },
+        system: { loggerOptions: { loggerCallback: () => {} } }
+      });
     }
 
-    function showToast() {
-      const t = document.getElementById('toast');
-      if (!t) return;
-      t.textContent = '✓ Report saved successfully';
-      t.classList.add('show');
-      setTimeout(() => t.classList.remove('show'), 2500);
+    async function login(clientId) {
+      if (!clientId) throw new Error('Client ID required.');
+      try {
+        if (!_app || _app.getConfiguration().auth.clientId !== clientId) {
+          initApp(clientId);
+          await _app.initialize();
+        }
+        setUI('Connecting…', 'connecting', 'connected');
+        const result = await _app.loginPopup({ scopes: SCOPES });
+        _account = result.account;
+        persist();
+        const who = _account?.name || _account?.username || 'user';
+        setUI(`Connected as <strong>${who}</strong>`, 'connected', 'connected');
+        return result;
+      } catch (e) {
+        setUI('Connect failed: ' + (e?.message || e), 'error', 'disconnected');
+        throw e;
+      }
     }
 
-    // ─── ONEDRIVE MODULE (MSAL popup) ───────────────────────────────────────
-    const OD = (() => {
-      const LS_KEY    = 'uvf_reporter_od_v2';
-      const GRAPH     = 'https://graph.microsoft.com/v1.0';
-      const SCOPES    = ['Files.ReadWrite', 'User.Read'];
-      const FILE_NAME = 'UVF_KPI_Data.json';
-
-      let _app     = null;
-      let _account = null;
-
-      const saved = (() => { try { return JSON.parse(localStorage.getItem(LS_KEY)||'null')||{}; } catch(e){return{};} })();
-
-      function persist() {
-        localStorage.setItem(LS_KEY, JSON.stringify({
-          clientId: _app?.getConfiguration().auth.clientId || saved.clientId
-        }));
+    async function getToken() {
+      if (!_app) throw new Error('Not initialised');
+      const accounts = _app.getAllAccounts();
+      if (!accounts.length) throw new Error('No account');
+      _account = accounts[0];
+      try {
+        const r = await _app.acquireTokenSilent({ scopes: SCOPES, account: _account });
+        return r.accessToken;
+      } catch(e) {
+        const r = await _app.acquireTokenPopup({ scopes: SCOPES, account: _account });
+        return r.accessToken;
       }
+    }
 
-      function isConnected() { return !!(_app && _account); }
-
-      function setUI(text, dotClass, mode) {
-        const dot = document.getElementById('od-dot');
-        const msg = document.getElementById('od-status');
-        if (dot) dot.className = 'od-dot ' + dotClass;
-        if (msg) msg.innerHTML = '<strong>OneDrive:</strong> ' + text;
-        const show = (id, v) => { const el=document.getElementById(id); if(el) el.style.display=v?'':'none'; };
-        const conn = mode === 'connected';
-        show('od-btn-connect', !conn);
-        show('od-btn-pull',    conn);
-        show('od-btn-push',    conn);
-        show('od-btn-disc',    conn);
+    async function gFetch(path, opts = {}) {
+      const token = await getToken();
+      const res = await fetch(GRAPH + path, {
+        ...opts,
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          ...(opts.rawBody ? {} : { 'Content-Type': 'application/json' }),
+          ...(opts.headers || {})
+        },
+        body: opts.rawBody || opts.body,
+      });
+      if (!res.ok && res.status !== 404) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status}${errText ? ' — ' + errText.slice(0,120) : ''}`);
       }
+      return res;
+    }
 
-      function initApp(clientId) {
-        const redirectUri = window.location.href.split('?')[0].split('#')[0];
-        _app = new msal.PublicClientApplication({
-          auth: { clientId, authority: 'https://login.microsoftonline.com/common', redirectUri, navigateToLoginRequestUrl: false },
-          cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false },
-          system: { loggerOptions: { loggerCallback: () => {} } }
-        });
-      }
-
-      // Implemented login() so OD._login works
-      async function login(clientId) {
-        if (!clientId) throw new Error('Client ID required.');
+    async function push(silent = false) {
+      if (!_app || !_account) return;
+      if (!silent) setUI('Pushing to OneDrive…', 'syncing', 'connected');
+      try {
+        let kpiData = [];
+        let remoteReports = {};
         try {
-          if (!_app || _app.getConfiguration().auth.clientId !== clientId) {
-            initApp(clientId);
-            await _app.initialize();
+          const r2 = await gFetch(`/me/drive/root:/${FILE_NAME}:/content`);
+          if (r2.ok) {
+            const existing = await r2.json();
+            kpiData = existing?.kpiData || (Array.isArray(existing) ? existing : []);
+            remoteReports = existing?.reports || {};
           }
-          setUI('Connecting…', 'connecting', 'connected');
-          const result = await _app.loginPopup({ scopes: SCOPES });
-          _account = result.account;
-          persist();
-          const who = _account?.name || _account?.username || 'user';
-          setUI(`Connected as <strong>${who}</strong>`, 'connected', 'connected');
-          return result;
-        } catch (e) {
-          setUI('Connect failed: ' + (e?.message || e), 'error', 'disconnected');
-          throw e;
-        }
-      }
+        } catch (_) {}
 
-      async function getToken() {
-        if (!_app) throw new Error('Not initialised');
-        const accounts = _app.getAllAccounts();
-        if (!accounts.length) throw new Error('No account');
-        _account = accounts[0];
-        try {
-          const r = await _app.acquireTokenSilent({ scopes: SCOPES, account: _account });
-          return r.accessToken;
-        } catch(e) {
-          const r = await _app.acquireTokenPopup({ scopes: SCOPES, account: _account });
-          return r.accessToken;
-        }
-      }
-
-      async function gFetch(path, opts={}) {
-        const token = await getToken();
-        const res = await fetch(GRAPH + path, {
-          ...opts,
-          headers: { 'Authorization': 'Bearer ' + token, ...(opts.rawBody?{}:{'Content-Type':'application/json'}), ...(opts.headers||{}) },
-          body: opts.rawBody || opts.body,
+        const merged = { ...remoteReports, ...state.reports };
+        const payload = JSON.stringify({ kpiData, reports: merged }, null, 2);
+        const r = await gFetch(`/me/drive/root:/${FILE_NAME}:/content`, {
+          method: 'PUT', headers: { 'Content-Type':'application/json' }, rawBody: payload
         });
-        if (!res.ok && res.status !== 404) {
-          const errText = await res.text().catch(()=> '');
-          throw new Error(`HTTP ${res.status}${errText ? ' — ' + errText.slice(0,120) : ''}`);
-        }
-        return res;
-      }
-
-      async function push(silent=false) {
-        if (!_app || !_account) return;
-        if (!silent) setUI('Pushing to OneDrive…', 'syncing', 'connected');
-        try {
-          let kpiData = [];
-          let remoteReports = {};
-          try {
-            const r2 = await gFetch(`/me/drive/root:/${FILE_NAME}:/content`);
-            if (r2.ok) {
-              const existing = await r2.json();
-              kpiData = existing?.kpiData || (Array.isArray(existing) ? existing : []);
-              remoteReports = existing?.reports || {};
-            }
-          } catch(e) {}
-
-          const merged = { ...remoteReports, ...state.reports };
-          const payload = JSON.stringify({ kpiData, reports: merged }, null, 2);
-          const r = await gFetch(`/me/drive/root:/${FILE_NAME}:/content`, {
-            method: 'PUT', headers: {'Content-Type':'application/json'}, rawBody: payload
-          });
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          if (!silent) {
-            const ts = new Date().toLocaleTimeString();
-            const who = _account?.name || _account?.username || 'user';
-            setUI(`Connected as <strong>${who}</strong> &nbsp;·&nbsp; <span style="color:#22c55e">✓ Saved</span> &nbsp;·&nbsp; ${ts}`, 'connected', 'connected');
-            showODToast('Saved to OneDrive ✓');
-          }
-        } catch(e) {
-          setUI('Push failed: ' + e.message, 'error', 'connected');
-          if (!silent) showODToast('Push error: ' + e.message);
-        }
-      }
-
-      async function pull() {
-        setUI('Pulling from OneDrive…', 'syncing', 'connected');
-        try {
-          const r = await gFetch(`/me/drive/root:/${FILE_NAME}:/content`);
-          if (r.status === 404) { setUI('No remote file yet — will create on first save.', 'connected', 'connected'); return; }
-          const remote = await r.json();
-          const remoteReports = remote?.reports || {};
-          for (const k of Object.keys(remoteReports)) {
-            if (!state.reports[k]) state.reports[k] = remoteReports[k];
-          }
-          try { localStorage.setItem('uvf_plan_html_v1', JSON.stringify({reports: state.reports})); } catch(e) {}
-          loadReport(); renderEditor();
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        if (!silent) {
           const ts = new Date().toLocaleTimeString();
           const who = _account?.name || _account?.username || 'user';
-          setUI(`Connected as <strong>${who}</strong> &nbsp;·&nbsp; <span style="color:#22c55e">✓ Synced</span> &nbsp;·&nbsp; ${ts}`, 'connected', 'connected');
-        } catch(e) {
-          setUI('Pull failed: ' + e.message, 'error', 'connected');
+          setUI(`Connected as <strong>${who}</strong> &nbsp;·&nbsp; <span style="color:#22c55e">✓ Saved</span> &nbsp;·&nbsp; ${ts}`, 'connected', 'connected');
+          showODToast('Saved to OneDrive ✓');
         }
-      }
-
-      function disconnect() {
-        if (!confirm('Disconnect from OneDrive? Local reports preserved.')) return;
-        if (_app && _account) _app.logoutPopup({account:_account}).catch(()=>{});
-        _app = null; _account = null;
-        localStorage.removeItem(LS_KEY);
-        setUI('Not connected', 'disconnected', 'disconnected');
-      }
-
-      async function init() {
-        if (!saved.clientId) return;
-        try {
-          initApp(saved.clientId);
-          await _app.initialize();
-          const accounts = _app.getAllAccounts();
-          if (!accounts.length) {
-            setUI('Session expired &nbsp;·&nbsp; <a onclick="openODSetup()" style="color:#60a5fa;cursor:pointer;text-decoration:underline">reconnect</a>', 'error', 'disconnected');
-            return;
-          }
-          _account = accounts[0];
-          setUI('Reconnecting…', 'connecting', 'connected');
-          await pull();
-          setInterval(()=>pull(), 60000);
-        } catch(e) {
-          setUI('Reconnect failed — <a onclick="openODSetup()" style="color:#60a5fa;cursor:pointer;text-decoration:underline">click to reconnect</a>', 'error', 'disconnected');
-        }
-      }
-
-      return { push, pull, disconnect, init, isConnected,
-        get state() { return { clientId: saved.clientId }; },
-        _login: login,
-      };
-    })();
-
-    function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-    function showODToast(msg) {
-      const t = document.getElementById('toast');
-      if (!t) return;
-      t.textContent = msg;
-      t.classList.add('show');
-      setTimeout(()=>t.classList.remove('show'), 3000);
-    }
-
-    // ── OD Modal UI ──────────────────────────────────────────────────────────
-    function odFillUri() {
-      const uri = window.location.href.split('?')[0].split('#')[0];
-      const el = document.getElementById('od-redirect-uri');
-      const warn = document.getElementById('od-uri-warn');
-      if (el) el.textContent = uri;
-      if (warn) warn.style.display = uri.startsWith('file://') ? 'block' : 'none';
-    }
-    function odCopyUri() {
-      const el = document.getElementById('od-redirect-uri');
-      if (el) navigator.clipboard.writeText(el.textContent).then(()=>showODToast('URI copied!')).catch(()=>{});
-    }
-    function odShowError(msg) {
-      const el = document.getElementById('od-error-box');
-      if (el) { el.style.display='block'; el.innerHTML='⚠ '+esc(msg); }
-    }
-    function odClearError() {
-      const el = document.getElementById('od-error-box');
-      if (el) { el.style.display='none'; el.innerHTML=''; }
-    }
-
-    function openODSetup() {
-      odFillUri();
-      document.getElementById('od-setup-modal').classList.add('open');
-      document.getElementById('od-step-1').style.display    = 'block';
-      document.getElementById('od-step-auth').style.display  = 'none';
-      document.getElementById('od-step-success').style.display = 'none';
-      odClearError();
-      const cid = OD.state.clientId;
-      if (cid) {
-        document.getElementById('od-client-id').value = cid;
-        const h = document.getElementById('od-saved-hint');
-        if (h) h.style.display = 'block';
-      }
-      if (reporterName) document.getElementById('od-reporter-name').value = reporterName;
-    }
-    function closeODSetup() {
-      document.getElementById('od-setup-modal').classList.remove('open');
-    }
-    document.addEventListener('click', e => {
-      const m = document.getElementById('od-setup-modal');
-      if (e.target === m) closeODSetup();
-    });
-
-    async function startODAuth() {
-      odClearError();
-      const nameVal = document.getElementById('od-reporter-name').value.trim();
-      if (nameVal) { reporterName=nameVal; localStorage.setItem('uvf_reporter_name', reporterName); updateNavAvatar(); }
-      const clientId = document.getElementById('od-client-id').value.trim();
-      if (!clientId) { odShowError('Please paste your Azure Application (Client) ID.'); return; }
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientId)) {
-        odShowError('Client ID must be UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'); return;
-      }
-      document.getElementById('od-step-1').style.display   = 'none';
-      document.getElementById('od-step-auth').style.display = 'block';
-      try {
-        const result = await OD._login(clientId);
-        document.getElementById('od-step-auth').style.display   = 'none';
-        document.getElementById('od-step-success').style.display = 'block';
-        document.getElementById('od-success-user').textContent = result.account?.name || result.account?.username || '';
-        await OD.pull();
-        setInterval(()=>OD.pull(), 60000);
       } catch(e) {
-        document.getElementById('od-step-auth').style.display = 'none';
-        document.getElementById('od-step-1').style.display    = 'block';
-        let msg = e.message || String(e);
-        if (msg.includes('popup_window_error'))           msg = 'Popup blocked — allow popups for this page, then try again.';
-        else if (msg.includes('AADSTS50011') || msg.includes('redirect_uri_mismatch')) {
-          const uri = window.location.href.split('?')[0].split('#')[0];
-          msg = `Redirect URI mismatch. In Azure → Authentication → SPA, add this URI exactly:\n${uri}`;
-        }
-        else if (msg.includes('AADSTS700016') || msg.includes('unauthorized_client')) msg = 'App not found. Double-check the Client ID.';
-        else if (msg.includes('user_cancelled')) msg = 'Sign-in cancelled. Try again.';
-        odShowError(msg);
+        setUI('Push failed: ' + e.message, 'error', 'connected');
+        if (!silent) showODToast('Push error: ' + e.message);
       }
     }
-    function cancelODAuth() {
+
+    async function pull() {
+      setUI('Pulling from OneDrive…', 'syncing', 'connected');
+      try {
+        const r = await gFetch(`/me/drive/root:/${FILE_NAME}:/content`);
+        if (r.status === 404) { setUI('No remote file yet — will create on first save.', 'connected', 'connected'); return; }
+        const remote = await r.json();
+        const remoteReports = remote?.reports || {};
+        for (const k of Object.keys(remoteReports)) {
+          if (!state.reports[k]) state.reports[k] = remoteReports[k];
+        }
+        try { localStorage.setItem('uvf_plan_html_v1', JSON.stringify({ reports: state.reports })); } catch (_) {}
+        loadReport(); renderEditor();
+        const ts = new Date().toLocaleTimeString();
+        const who = _account?.name || _account?.username || 'user';
+        setUI(`Connected as <strong>${who}</strong> &nbsp;·&nbsp; <span style="color:#22c55e">✓ Synced</span> &nbsp;·&nbsp; ${ts}`, 'connected', 'connected');
+      } catch(e) {
+        setUI('Pull failed: ' + e.message, 'error', 'connected');
+      }
+    }
+
+    function disconnect() {
+      if (!confirm('Disconnect from OneDrive? Local reports preserved.')) return;
+      if (_app && _account) _app.logoutPopup({ account:_account }).catch(() => {});
+      _app = null; _account = null;
+      localStorage.removeItem(LS_KEY);
+      setUI('Not connected', 'disconnected', 'disconnected');
+    }
+
+    async function init() {
+      if (!saved.clientId) return;
+      try {
+        initApp(saved.clientId);
+        await _app.initialize();
+        const accounts = _app.getAllAccounts();
+        if (!accounts.length) {
+          setUI('Session expired &nbsp;·&nbsp; <a onclick="openODSetup()" style="color:#60a5fa;cursor:pointer;text-decoration:underline">reconnect</a>', 'error', 'disconnected');
+          return;
+        }
+        _account = accounts[0];
+        setUI('Reconnecting…', 'connecting', 'connected');
+        await pull();
+        setInterval(() => pull(), 60000);
+      } catch(e) {
+        setUI('Reconnect failed — <a onclick="openODSetup()" style="color:#60a5fa;cursor:pointer;text-decoration:underline">click to reconnect</a>', 'error', 'disconnected');
+      }
+    }
+
+    return { push, pull, disconnect, init, isConnected,
+      get state() { return { clientId: saved.clientId }; },
+      _login: login,
+    };
+  })();
+
+  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function showODToast(msg) {
+    const t = document.getElementById('toast');
+    if (!t) return;
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  // ── OD Modal UI ───────────────────────────────────────────────────────────
+  function odFillUri() {
+    const uri = window.location.href.split('?')[0].split('#')[0];
+    const el = document.getElementById('od-redirect-uri');
+    const warn = document.getElementById('od-uri-warn');
+    if (el) el.textContent = uri;
+    if (warn) warn.style.display = uri.startsWith('file://') ? 'block' : 'none';
+  }
+  function odCopyUri() {
+    const el = document.getElementById('od-redirect-uri');
+    if (el) navigator.clipboard.writeText(el.textContent).then(() => showODToast('URI copied!')).catch(() => {});
+  }
+  function odShowError(msg) {
+    const el = document.getElementById('od-error-box');
+    if (el) { el.style.display = 'block'; el.innerHTML = '⚠ ' + esc(msg); }
+  }
+  function odClearError() {
+    const el = document.getElementById('od-error-box');
+    if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+  }
+
+  function openODSetup() {
+    odFillUri();
+    document.getElementById('od-setup-modal').classList.add('open');
+    document.getElementById('od-step-1').style.display    = 'block';
+    document.getElementById('od-step-auth').style.display  = 'none';
+    document.getElementById('od-step-success').style.display = 'none';
+    odClearError();
+    const cid = OD.state.clientId;
+    if (cid) {
+      document.getElementById('od-client-id').value = cid;
+      const h = document.getElementById('od-saved-hint');
+      if (h) h.style.display = 'block';
+    }
+    if (reporterName) document.getElementById('od-reporter-name').value = reporterName;
+  }
+  function closeODSetup() {
+    document.getElementById('od-setup-modal').classList.remove('open');
+  }
+  document.addEventListener('click', e => {
+    const m = document.getElementById('od-setup-modal');
+    if (e.target === m) closeODSetup();
+  });
+
+  async function startODAuth() {
+    odClearError();
+    const nameVal = document.getElementById('od-reporter-name').value.trim();
+    if (nameVal) { reporterName = nameVal; localStorage.setItem('uvf_reporter_name', reporterName); updateNavAvatar(); }
+    const clientId = document.getElementById('od-client-id').value.trim();
+    if (!clientId) { odShowError('Please paste your Azure Application (Client) ID.'); return; }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientId)) {
+      odShowError('Client ID must be UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'); return;
+    }
+    document.getElementById('od-step-1').style.display   = 'none';
+    document.getElementById('od-step-auth').style.display = 'block';
+    try {
+      const result = await OD._login(clientId);
+      document.getElementById('od-step-auth').style.display   = 'none';
+      document.getElementById('od-step-success').style.display = 'block';
+      document.getElementById('od-success-user').textContent = result.account?.name || result.account?.username || '';
+      await OD.pull();
+      setInterval(() => OD.pull(), 60000);
+    } catch(e) {
       document.getElementById('od-step-auth').style.display = 'none';
       document.getElementById('od-step-1').style.display    = 'block';
+      let msg = e.message || String(e);
+      if (msg.includes('popup_window_error'))           msg = 'Popup blocked — allow popups for this page, then try again.';
+      else if (msg.includes('AADSTS50011') || msg.includes('redirect_uri_mismatch')) {
+        const uri = window.location.href.split('?')[0].split('#')[0];
+        msg = `Redirect URI mismatch. In Azure → Authentication → SPA, add this URI exactly:\n${uri}`;
+      }
+      else if (msg.includes('AADSTS700016') || msg.includes('unauthorized_client')) msg = 'App not found. Double-check the Client ID.';
+      else if (msg.includes('user_cancelled')) msg = 'Sign-in cancelled. Try again.';
+      odShowError(msg);
+    }
+  }
+  function cancelODAuth() {
+    document.getElementById('od-step-auth').style.display = 'none';
+    document.getElementById('od-step-1').style.display    = 'block';
+  }
+
+  // ─── AFTER-AUTH INITIALIZER ───────────────────────────────────────────────
+  async function initPortal(account) {
+    // Inject the UI template so nothing renders pre-auth
+    const root = document.getElementById('app-root');
+    const tpl  = document.getElementById('app-template');
+    if (root && tpl && !root.hasChildNodes()) {
+      root.appendChild(tpl.content.cloneNode(true));
     }
 
-    // ─── AFTER-AUTH INITIALIZER ─────────────────────────────────────────────
-    async function initPortal(account) {
-      // Inject the UI template so nothing renders pre-auth
-      const root = document.getElementById('app-root');
-      const tpl  = document.getElementById('app-template');
-      if (root && tpl && !root.hasChildNodes()) {
-        root.appendChild(tpl.content.cloneNode(true));
+    // Reporter name/avatar
+    try {
+      const cached = localStorage.getItem('uvf_reporter_name');
+      const derived = account?.name || account?.username || "";
+      const nameToUse = cached || derived || "";
+      if (nameToUse && !cached) {
+        reporterName = nameToUse;
+        localStorage.setItem('uvf_reporter_name', reporterName);
+      } else {
+        reporterName = nameToUse;
       }
+      updateNavAvatar();
+    } catch (_) {}
 
-      // Reporter name/avatar
-      try {
-        const cached = localStorage.getItem('uvf_reporter_name');
-        const derived = account?.name || account?.username || "";
-        const nameToUse = cached || derived || "";
-        if (nameToUse && !cached) {
-          reporterName = nameToUse;
-          localStorage.setItem('uvf_reporter_name', reporterName);
-        } else {
-          reporterName = nameToUse;
-        }
-        updateNavAvatar();
-      } catch(_) {}
+    // Initialize data + UI
+    try {
+      loadReport();
+      renderSidebar();
+      renderEditor();
 
-      // Initialize data + UI
-      try {
-        loadReport();
-        renderSidebar();
-        renderEditor();
-
-        // Reconnect OneDrive if a clientId was saved previously
-        if (typeof OD !== 'undefined' && OD && typeof OD.init === 'function') {
-          await OD.init();
-          setInterval(() => OD.pull(), 60000);
-        }
-      } catch (e) {
-        console.error("Portal initialization failed:", e);
-        const p = document.createElement('p');
-        p.style.cssText = "color:#a00;text-align:center;margin:12px;font-family:Segoe UI,Arial";
-        p.textContent = "Portal failed to initialize fully. Check the console for details.";
-        document.body.appendChild(p);
+      // Reconnect OneDrive if a clientId was saved previously
+      if (typeof OD !== 'undefined' && OD && typeof OD.init === 'function') {
+        await OD.init();
+        setInterval(() => OD.pull(), 60000);
       }
+    } catch (e) {
+      console.error("Portal initialization failed:", e);
+      const p = document.createElement('p');
+      p.style.cssText = "color:#a00;text-align:center;margin:12px;font-family:Segoe UI,Arial";
+      p.textContent = "Portal failed to initialize fully. Check the console for details.";
+      document.body.appendChild(p);
     }
-    // Expose to head gate
-    window.initPortal = initPortal;
-  </script>
-<!-- MSAL -->
+  }
+
+  // Export to MSAL block
+  window.initPortal = initPortal;
+</script>
+
+<!-- MSAL (single include) -->
 <script src="./msal-browser.min.js"></script>
 
 <script>
+  // MSAL configuration
   const msalConfig = {
     auth: {
       clientId: "30bde775-3b2a-4aa1-814d-0991dd3f2bda",
@@ -1283,8 +1309,6 @@
         document.documentElement.style.visibility = "visible";
       }
     }
-
-    // Wait until the rest of your scripts are fully loaded
     if (document.readyState === "complete") {
       start();
     } else {
@@ -1293,7 +1317,6 @@
   }
 
   window.addEventListener("DOMContentLoaded", async () => {
-    // MSAL available?
     if (!window.msal || !msal.PublicClientApplication) {
       showError("Microsoft auth library failed to load.");
       document.documentElement.style.visibility = "visible";
@@ -1329,10 +1352,7 @@
       }
 
       window.authAccount = account;
-
-      // Run the page
       runPortal(account);
-
     } catch (err) {
       console.error("MSAL error:", err);
       showError("Microsoft sign-in error. Please refresh.");
