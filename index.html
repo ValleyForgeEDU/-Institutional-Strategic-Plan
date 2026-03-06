@@ -102,25 +102,62 @@
 </script>
 
 <script>
-// Fetch wrapper that auto-attaches the token
-window.apiFetch = async function(path, options = {}) {
-  const token = await window.getAccessToken();
-  if (!token) throw new Error("No access token");
+// Only attach auth to calls that hit "/Reporting/...". Everything else is untouched.
+(function () {
+  if (window.__reportingFetchPatched) return;
+  window.__reportingFetchPatched = true;
 
-  const url = path.startsWith("http")
-    ? path
-    : path.startsWith("/")
-      ? path
-      : "/" + path;
+  const origFetch = window.fetch.bind(window);
 
-  const headers = {
-    ...(options.headers || {}),
-    "Authorization": "Bearer " + token,
-    "Accept": "application/json"
+  function isReportingUrl(u) {
+    // Matches "/Reporting/..." or "https://host/Reporting/..."
+    if (typeof u !== 'string') return false;
+    try {
+      // Normalize relative vs absolute
+      const abs = u.startsWith('http') ? new URL(u) : new URL(u, window.location.origin);
+      return /\/Reporting\//i.test(abs.pathname);
+    } catch {
+      return false;
+    }
+  }
+
+  window.fetch = async function(input, init = {}) {
+    const url = (typeof input === 'string') ? input : (input && input.url) || '';
+    if (!isReportingUrl(url)) {
+      // Not our API → don’t touch
+      return origFetch(input, init);
+    }
+
+    const headers = new Headers(init.headers || {});
+    if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+
+    // Prefer Bearer token if your page exposes getAccessToken (from your MSAL block)
+    let usedBearer = false;
+    if (typeof window.getAccessToken === 'function') {
+      try {
+        const token = await window.getAccessToken();
+        if (token) {
+          headers.set('Authorization', 'Bearer ' + token);
+          usedBearer = true;
+        }
+      } catch { /* ignore, we’ll fall back to cookies */ }
+    }
+
+    // If we didn’t attach a Bearer, send cookies so cookie-based APIs work
+    const credentials = init.credentials ?? (usedBearer ? 'same-origin' : 'include');
+
+    // Auto JSON Content-Type for object bodies on write methods
+    const m = (init.method || 'GET').toUpperCase();
+    const needsBodyJson = (m === 'POST' || m === 'PUT' || m === 'PATCH');
+    let body = init.body;
+    if (needsBodyJson && body && typeof body === 'object' && !(body instanceof FormData)) {
+      if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+      body = JSON.stringify(body);
+    }
+
+    return origFetch(input, { ...init, headers, credentials, body });
   };
-
-  return fetch(url, { ...options, headers });
-}
+})();
 </script>
 
   <!-- Fonts link from your original -->
