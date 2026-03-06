@@ -27,14 +27,7 @@
     cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false }
   };
 
-  // CHANGE: Configure your API scope(s). These must exist on the Azure app that represents your API.
-  // If you’re using "Expose an API" with a custom scope, it usually looks like:
-  //   api://<api-app-id>/Report.Read  (or similar)
-  // If you’re using the default ".default" scope (application roles/permissions), use that instead.
-  const apiScopes = ["api://<YOUR-API-APP-ID>/Report.Read"]; // <-- CHANGE THIS VALUE
-
-  // CHANGE: Base URL of your API (used by helper below). Keep the trailing slash or update fetch calls accordingly.
-  const API_BASE = "https://<your-api-host.example>/"; // <-- CHANGE THIS VALUE
+onst apiScopes = ["User.Read"];
 
   // Optional gates
   const requireEmailDomain = "@valleyforge.edu";
